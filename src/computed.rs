@@ -249,6 +249,7 @@ impl AsepritePalette {
 }
 
 /// All the tags defined in the corresponding aseprite
+#[derive(Debug)]
 pub struct AsepriteTags<'a> {
     tags: &'a HashMap<String, AsepriteTag>,
 }
@@ -304,6 +305,7 @@ pub struct AsepriteSlice {
 }
 
 /// The layers inside an aseprite file
+#[derive(Debug)]
 pub struct AsepriteLayers<'a> {
     layers: &'a BTreeMap<usize, AsepriteLayer>,
 }
@@ -466,6 +468,7 @@ impl AsepriteCel {
 }
 
 /// The frames contained in an aseprite
+#[derive(Debug)]
 pub struct AsepriteFrames<'a> {
     aseprite: &'a Aseprite,
 }
@@ -510,6 +513,7 @@ pub struct AsepriteSliceImage {
 }
 
 /// The slices contained in an aseprite
+#[derive(Debug)]
 pub struct AsepriteSlices<'a> {
     aseprite: &'a Aseprite,
 }

@@ -197,6 +197,7 @@ fn aseprite_color(input: &[u8]) -> AseParseResult<AsepriteColor> {
 }
 
 /// Raw user data
+#[derive(Debug)]
 pub struct RawAsepriteUserData {
     /// Text, if any
     pub text: Option<String>,
@@ -214,6 +215,7 @@ fn aseprite_user_data(input: &[u8]) -> AseParseResult<RawAsepriteUserData> {
 }
 
 /// Layer type
+#[derive(Debug)]
 pub enum AsepriteLayerType {
     /// A normal layer
     Normal,
@@ -523,6 +525,7 @@ fn aseprite_anim_direction(input: &[u8]) -> AseParseResult<AsepriteAnimationDire
 }
 
 /// A raw Tag
+#[derive(Debug)]
 pub struct RawAsepriteTag {
     /// Starting frame
     pub from: u16,
@@ -555,6 +558,7 @@ fn aseprite_tag(input: &[u8]) -> AseParseResult<RawAsepriteTag> {
 }
 
 /// Raw Chunk
+#[derive(Debug)]
 pub enum RawAsepriteChunk {
     /// Layer Chunk
     ///
@@ -665,6 +669,7 @@ pub enum RawAsepriteChunk {
 }
 
 /// A raw Icc Profile
+#[derive(Debug)]
 pub struct RawAsepriteIccProfile {
     /// The bytes of the icc profile
     pub icc_profile: Vec<u8>,
@@ -701,6 +706,7 @@ fn color_profile_chunk(input: &[u8]) -> AseParseResult<RawAsepriteChunk> {
 }
 
 /// Raw Slice
+#[derive(Debug)]
 pub struct RawAsepriteSlice {
     /// For which frame this slice is valid from (to the end of the animation)
     pub frame: u32,
@@ -751,6 +757,7 @@ fn aseprite_nine_patch_info(input: &[u8]) -> AseParseResult<AsepriteNinePatchInf
 }
 
 /// A raw pivot inside a slice
+#[derive(Debug)]
 pub struct AsepritePivot {
     /// x position, relative to origin
     pub x_pivot: i32,
@@ -820,6 +827,7 @@ fn user_data_chunk(input: &[u8]) -> AseParseResult<RawAsepriteChunk> {
 }
 
 /// A raw palette entry
+#[derive(Debug)]
 pub struct RawAsepritePaletteEntry {
     /// color of this entry
     pub color: AsepriteColor,
