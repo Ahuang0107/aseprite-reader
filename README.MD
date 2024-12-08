@@ -21,13 +21,8 @@ fn load_character() {
     let aseprite = Aseprite::from_path("assets/sprites/character.aseprite")
         .expect("Could not read aseprite file.");
 
+    let layers = aseprite.layers();
     let tags = aseprite.tags();
-
-    let walk_tag = &tags["walk"];
-    println!("This tag uses these frames: {:?}", walk_tag.frames); // `.frames` is a range
-
-    let all_frames = aseprite.frames();
-    let frames = all_frames.get_for(&walk_tag.frames);
-    let images = frames.get_images();
+    let frames = aseprite.frames();
 }
 ```

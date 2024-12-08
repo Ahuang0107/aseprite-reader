@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    ops::{Index, Range},
+    ops::Range,
     path::Path,
 };
 
@@ -107,7 +107,7 @@ impl Aseprite {
                         layers.insert(id, layer);
                         last_chunk_type = RawAsepriteChunkType::Layer;
                     }
-                    crate::raw::RawAsepriteChunk::Cel {
+                    RawAsepriteChunk::Cel {
                         layer_index,
                         x,
                         y,
@@ -123,14 +123,7 @@ impl Aseprite {
                         last_chunk_type =
                             RawAsepriteChunkType::Cel(layer_index as usize, frame_index);
                     }
-                    crate::raw::RawAsepriteChunk::CelExtra {
-                        flags,
-                        x,
-                        y,
-                        width,
-                        height,
-                    } => todo!("Not yet implemented cel extra"),
-                    crate::raw::RawAsepriteChunk::Tags { tags: raw_tags } => {
+                    RawAsepriteChunk::Tags { tags: raw_tags } => {
                         let start_index = tags.len();
                         let mut cur_index = start_index;
                         for raw_tag in raw_tags {
@@ -149,7 +142,7 @@ impl Aseprite {
                         }
                         last_chunk_type = RawAsepriteChunkType::Tags(start_index);
                     }
-                    crate::raw::RawAsepriteChunk::Palette {
+                    RawAsepriteChunk::Palette {
                         palette_size,
                         from_color,
                         to_color: _,
@@ -159,7 +152,7 @@ impl Aseprite {
                             Some(AsepritePalette::from_raw(palette_size, from_color, entries));
                         last_chunk_type = RawAsepriteChunkType::Palette;
                     }
-                    crate::raw::RawAsepriteChunk::UserData { data } => {
+                    RawAsepriteChunk::UserData { data } => {
                         match &mut last_chunk_type {
                             RawAsepriteChunkType::Layer => {
                                 let id = layers.len() - 1;
@@ -185,10 +178,10 @@ impl Aseprite {
                             _ => {}
                         }
                     }
-                    crate::raw::RawAsepriteChunk::Slice {
-                        flags,
+                    RawAsepriteChunk::Slice {
                         name,
                         slices: raw_slices,
+                        ..
                     } => {
                         slices.extend(raw_slices.into_iter().map(
                             |crate::raw::RawAsepriteSlice {
@@ -198,7 +191,7 @@ impl Aseprite {
                                  width,
                                  height,
                                  nine_patch_info,
-                                 pivot,
+                                 ..
                              }| {
                                 (
                                     name.clone(),
@@ -216,12 +209,10 @@ impl Aseprite {
                         ));
                         last_chunk_type = RawAsepriteChunkType::Slice;
                     }
-                    crate::raw::RawAsepriteChunk::ColorProfile {
-                        profile_type,
-                        flags,
-                        gamma,
-                        icc_profile,
-                    } => {
+                    RawAsepriteChunk::CelExtra { .. } => {
+                        todo!("Not yet implemented cel extra")
+                    }
+                    RawAsepriteChunk::ColorProfile { .. } => {
                         error!("Not yet implemented color profile")
                         // todo!("Not yet implemented color profile")
                     }
@@ -300,11 +291,6 @@ pub struct AsepriteTags<'a> {
 }
 
 impl<'a> AsepriteTags<'a> {
-    /// Get a tag defined by its name
-    pub fn get_by_name<N: AsRef<str>>(&self, name: N) -> Option<&AsepriteTag> {
-        todo!()
-    }
-
     /// Get a tag defined by its id index
     pub fn get(&self, id: &usize) -> Option<&AsepriteTag> {
         self.tags.get(id)
@@ -313,14 +299,6 @@ impl<'a> AsepriteTags<'a> {
     /// Get all available tags
     pub fn all(&self) -> impl Iterator<Item = &AsepriteTag> {
         self.tags.values()
-    }
-}
-
-impl<'a, 'r> Index<&'r str> for AsepriteTags<'a> {
-    type Output = AsepriteTag;
-
-    fn index(&self, index: &'r str) -> &Self::Output {
-        self.get_by_name(index).unwrap()
     }
 }
 
@@ -542,13 +520,6 @@ impl AsepriteLayer {
         }
     }
 
-    fn cel_count(&self) -> usize {
-        match self {
-            AsepriteLayer::Group { .. } => 0,
-            AsepriteLayer::Normal { cels, .. } => cels.len(),
-        }
-    }
-
     fn add_cel(&mut self, cel: AsepriteCel) -> AseResult<usize> {
         match self {
             AsepriteLayer::Group { id, .. } => {
@@ -623,6 +594,7 @@ impl AsepriteLayer {
 pub struct AsepriteCel {
     x: f64,
     y: f64,
+    #[allow(dead_code)]
     opacity: u8,
     raw_cel: RawAsepriteCel,
     color: AsepriteColor,
@@ -861,7 +833,7 @@ impl<'a> AsepriteFrame<'a> {
                 continue;
             };
 
-            let write_image = |cel: &AsepriteCel,
+            let write_image = |_cel: &AsepriteCel,
                                width: u16,
                                height: u16,
                                pixels: &[AsepritePixel]|
@@ -1064,10 +1036,12 @@ mod test {
 
         // 验证 cel 的图片和属性是否正确
         let frames = aseprite.frames();
+        let layers = aseprite.layers();
+
         let frame_0 = frames.get(0);
         if let Ok(images) = frame_0.get_images() {
             for (layer_id, image) in images {
-                let layer = aseprite.layers.get(&layer_id).unwrap();
+                let layer = layers.get_by_id(layer_id).unwrap();
                 match layer.name() {
                     "BG1" => {
                         let export_image = image::open("./tests/test_cases/images/complex_BG1.png")
@@ -1088,6 +1062,16 @@ mod test {
                     }
                     _ => {}
                 }
+            }
+        }
+
+        for (_, layer) in layers.layers.iter() {
+            match layer.name() {
+                "BG1" => {
+                    let frame_2_cel = layer.get_cel(1).unwrap();
+                    assert_eq!(frame_2_cel.opacity, 128);
+                }
+                _ => {}
             }
         }
 
