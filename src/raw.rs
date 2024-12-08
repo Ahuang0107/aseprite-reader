@@ -163,6 +163,7 @@ fn aseprite_string(input: &[u8]) -> AseParseResult<String> {
 }
 
 /// A raw frame
+#[derive(Debug)]
 pub struct RawAsepriteFrame {
     /// The magic frame number, always `0xF1FA`
     pub magic_number: u16,
@@ -174,12 +175,23 @@ pub struct RawAsepriteFrame {
 
 /// A full RGBA color
 #[allow(missing_docs)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct AsepriteColor {
     pub red: u8,
     pub green: u8,
     pub blue: u8,
     pub alpha: u8,
+}
+
+impl Default for AsepriteColor {
+    fn default() -> Self {
+        Self {
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: 0,
+        }
+    }
 }
 
 fn aseprite_color(input: &[u8]) -> AseParseResult<AsepriteColor> {
@@ -197,21 +209,41 @@ fn aseprite_color(input: &[u8]) -> AseParseResult<AsepriteColor> {
 }
 
 /// Raw user data
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RawAsepriteUserData {
     /// Text, if any
-    pub text: Option<String>,
+    pub text: String,
     /// Color, if any
-    pub color: Option<AsepriteColor>,
+    pub color: AsepriteColor,
 }
 
 fn aseprite_user_data(input: &[u8]) -> AseParseResult<RawAsepriteUserData> {
     let (input, kind) = le_u32(input)?;
 
+    // + If flags have bit 1
+    //   STRING    Text
     let (input, text) = cond(kind & 0x1 != 0, aseprite_string)(input)?;
+    // + If flags have bit 2
+    //   BYTE      Color Red (0-255)
+    //   BYTE      Color Green (0-255)
+    //   BYTE      Color Blue (0-255)
+    //   BYTE      Color Alpha (0-255)
     let (input, color) = cond(kind & 0x2 != 0, aseprite_color)(input)?;
 
-    Ok((input, RawAsepriteUserData { text, color }))
+    let mut result = RawAsepriteUserData {
+        text: String::new(),
+        color: AsepriteColor::default(),
+    };
+
+    if let Some(text) = text {
+        result.text = text;
+    }
+
+    if let Some(color) = color {
+        result.color = color;
+    }
+
+    Ok((input, result))
 }
 
 /// Layer type
@@ -240,7 +272,7 @@ fn aseprite_layer_type(input: &[u8]) -> AseParseResult<AsepriteLayerType> {
     ))
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 /// The different blend modes
 #[allow(missing_docs)]
 pub enum AsepriteBlendMode {
@@ -409,9 +441,30 @@ pub enum RawAsepriteCel {
 impl std::fmt::Debug for RawAsepriteCel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Raw { .. } => write!(f, "Raw"),
-            Self::Linked { .. } => write!(f, "Linked"),
-            Self::Compressed { .. } => write!(f, "Compressed"),
+            Self::Raw {
+                width,
+                height,
+                pixels,
+            } => f
+                .debug_struct("RawAsepriteCel::Raw")
+                .field("width", &width)
+                .field("height", &height)
+                .field("pixels_len", &pixels.len())
+                .finish(),
+            Self::Linked { frame_position } => f
+                .debug_struct("RawAsepriteCel::Linked")
+                .field("frame_position", &frame_position)
+                .finish(),
+            Self::Compressed {
+                width,
+                height,
+                pixels,
+            } => f
+                .debug_struct("RawAsepriteCel::Compressed")
+                .field("width", &width)
+                .field("height", &height)
+                .field("pixels_len", &pixels.len())
+                .finish(),
         }
     }
 }
@@ -555,6 +608,31 @@ fn aseprite_tag(input: &[u8]) -> AseParseResult<RawAsepriteTag> {
             name,
         },
     ))
+}
+
+/// Raw Chunk Types
+///
+/// Used when find user data belong to layer, tags or cel
+#[derive(Debug)]
+pub enum RawAsepriteChunkType {
+    /// Layer Chunk Type
+    Layer,
+    /// Cel Chunk Type
+    Cel(usize, usize),
+    /// CelExtra Chunk Type
+    CelExtra,
+    /// Tags Chunk Type
+    ///
+    /// 记录接下来遇到的 user data 对应的 tag 索引
+    Tags(usize),
+    /// Palette Chunk Type
+    Palette,
+    // /// UserData Chunk Type
+    // UserData,
+    /// Slice Chunk Type
+    Slice,
+    /// ColorProfile Chunk Type
+    ColorProfile,
 }
 
 /// Raw Chunk
@@ -1072,6 +1150,7 @@ fn aseprite_frames<'a>(
 }
 
 /// A raw .aseprite file
+#[derive(Debug)]
 pub struct RawAseprite {
     /// The header describes how the rest of the file is to be interpreted
     pub header: RawAsepriteHeader,
