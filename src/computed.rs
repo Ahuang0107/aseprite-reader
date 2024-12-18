@@ -147,7 +147,7 @@ impl Aseprite {
                             tags.insert(
                                 cur_index,
                                 AsepriteTag {
-                                    id: cur_index,
+                                    index: cur_index,
                                     frames: raw_tag.from..raw_tag.to,
                                     animation_direction: raw_tag.anim_direction,
                                     name: raw_tag.name,
@@ -325,8 +325,8 @@ impl<'a> AsepriteTags<'a> {
 #[derive(Debug, Clone)]
 /// A single Aseprite tag
 pub struct AsepriteTag {
-    /// The tag id
-    pub id: usize,
+    /// The tag index
+    pub index: usize,
     /// The frames which this tag represents
     pub frames: Range<u16>,
     /// The direction of its animation
