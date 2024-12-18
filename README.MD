@@ -20,9 +20,5 @@ use aseprite_reader::Aseprite;
 fn load_character() {
     let aseprite = Aseprite::from_path("assets/sprites/character.aseprite")
         .expect("Could not read aseprite file.");
-
-    let layers = aseprite.layers();
-    let tags = aseprite.tags();
-    let frames = aseprite.frames();
 }
 ```

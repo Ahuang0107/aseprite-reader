@@ -33,25 +33,24 @@ pub struct Aseprite {
 
 impl Aseprite {
     /// Get the [`AsepriteTag`]s defined in this Aseprite
-    pub fn tags(&self) -> AsepriteTags {
-        AsepriteTags { tags: &self.tags }
+    pub fn tags(&self) -> impl Iterator<Item = &AsepriteTag> {
+        self.tags.values()
     }
 
     /// Get the associated [`AsepriteLayer`]s defined in this Aseprite
-    pub fn layers(&self) -> AsepriteLayers {
-        AsepriteLayers {
-            layers: &self.layers,
-        }
+    pub fn layers(&self) -> impl Iterator<Item = &AsepriteLayer> {
+        self.layers.values()
     }
 
     /// Get the frames inside this aseprite
-    pub fn frames(&self) -> AsepriteFrames {
-        AsepriteFrames { aseprite: self }
-    }
-
-    /// Get infos about the contained frames
-    pub fn frame_infos(&self) -> &[AsepriteFrameInfo] {
-        &self.frame_infos
+    pub fn get_frame(&self, frame_index: usize) -> Option<AsepriteFrame> {
+        if frame_index >= self.frame_count {
+            return None;
+        }
+        Some(AsepriteFrame {
+            aseprite: self,
+            frame_index,
+        })
     }
 
     /// Get the slices inside this aseprite
@@ -69,6 +68,130 @@ impl Aseprite {
             .get(frame_index)
             .ok_or(AsepriteInvalidError::InvalidFrame(*frame_index))?;
         Ok(cel)
+    }
+
+    /// Get a layer by its name
+    ///
+    /// If you have its id, prefer fetching it using [`get_by_id`]
+    pub fn get_layer_by_name<N: AsRef<str>>(&self, name: N) -> Option<&AsepriteLayer> {
+        let name = name.as_ref();
+        self.layers
+            .iter()
+            .find(|(_, layer)| layer.name() == name)
+            .map(|(_, layer)| layer)
+    }
+
+    /// Get a layer by its index
+    pub fn get_layer_by_index(&self, index: &usize) -> Option<&AsepriteLayer> {
+        self.layers.get(index)
+    }
+
+    /// 找到提供的 index 的 layer 属于的所有 groups
+    pub fn find_layer_belong_groups(&self, index: usize) -> Vec<usize> {
+        let Some(layer) = self.layers.get(&index) else {
+            return Vec::new();
+        };
+        let mut cur_child_level = layer.child_level();
+        let mut cur_index = index;
+        let mut result = Vec::new();
+        'find_all_group: while cur_child_level > 0 {
+            cur_child_level -= 1;
+            loop {
+                cur_index -= 1;
+                if let Some(layer) = self.layers.get(&cur_index) {
+                    match layer {
+                        AsepriteLayer::Group {
+                            index, child_level, ..
+                        } => {
+                            if *child_level == cur_child_level {
+                                cur_index = *index;
+                                result.push(*index);
+                                continue 'find_all_group;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// 根据传入的像素数据生成对应图像，其中如果传入 cel 则生成完整尺寸的图像，否则生成当前 sprite trim 后的图像
+    fn write_image(
+        &self,
+        cel: Option<&AsepriteCel>,
+        width: u16,
+        height: u16,
+        pixels: &[AsepritePixel],
+    ) -> AseResult<RgbaImage> {
+        let mut image = RgbaImage::new(width as u32, height as u32);
+        for x in 0..width {
+            for y in 0..height {
+                let mut pix_x = x as i16;
+                let mut pix_y = y as i16;
+                if let Some(cel) = &cel {
+                    pix_x += cel.x as i16;
+                    pix_y += cel.y as i16
+                }
+
+                if pix_x < 0 || pix_y < 0 {
+                    continue;
+                }
+                let raw_pixel = &pixels[(x + y * width) as usize];
+                let pixel =
+                    Rgba(raw_pixel.get_rgba(self.palette.as_ref(), self.transparent_palette)?);
+
+                image
+                    .get_pixel_mut(pix_x as u32, pix_y as u32)
+                    .blend(&pixel);
+            }
+        }
+        Ok(image)
+    }
+
+    /// Get images of each layer in this frame
+    ///
+    /// The key of return map is layer id
+    pub fn get_image_by_layer_frame(
+        &self,
+        layer_index: &usize,
+        frame_index: &usize,
+    ) -> AseResult<RgbaImage> {
+        let cel = self.get_cel(layer_index, frame_index)?;
+        match &cel.raw_cel {
+            RawAsepriteCel::Raw {
+                width,
+                height,
+                pixels,
+            }
+            | RawAsepriteCel::Compressed {
+                width,
+                height,
+                pixels,
+            } => Ok(self.write_image(None, *width, *height, pixels)?),
+            RawAsepriteCel::Linked { frame_position } => {
+                let frame_index = (*frame_position as usize) - 1;
+                match &self.get_cel(layer_index, &frame_index)?.raw_cel {
+                    RawAsepriteCel::Raw {
+                        width,
+                        height,
+                        pixels,
+                    }
+                    | RawAsepriteCel::Compressed {
+                        width,
+                        height,
+                        pixels,
+                    } => Ok(self.write_image(None, *width, *height, pixels)?),
+                    RawAsepriteCel::Linked { frame_position } => {
+                        error!("Tried to draw a linked cel twice! This should not happen, linked cel should not link to a linked cel.");
+                        Err(AsepriteError::InvalidConfiguration(
+                            AsepriteInvalidError::InvalidFrame(*frame_position as usize),
+                        ))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -304,24 +427,6 @@ impl AsepritePalette {
     }
 }
 
-/// All the tags defined in the corresponding aseprite
-#[derive(Debug)]
-pub struct AsepriteTags<'a> {
-    tags: &'a BTreeMap<usize, AsepriteTag>,
-}
-
-impl<'a> AsepriteTags<'a> {
-    /// Get a tag defined by its id index
-    pub fn get(&self, id: &usize) -> Option<&AsepriteTag> {
-        self.tags.get(id)
-    }
-
-    /// Get all available tags
-    pub fn all(&self) -> impl Iterator<Item = &AsepriteTag> {
-        self.tags.values()
-    }
-}
-
 #[derive(Debug, Clone)]
 /// A single Aseprite tag
 pub struct AsepriteTag {
@@ -363,64 +468,6 @@ pub struct AsepriteSlice {
     pub height: u32,
     /// Nine-Patch Info if it exists
     pub nine_patch_info: Option<AsepriteNinePatchInfo>,
-}
-
-/// The layers inside an aseprite file
-#[derive(Debug)]
-pub struct AsepriteLayers<'a> {
-    layers: &'a BTreeMap<usize, AsepriteLayer>,
-}
-
-impl<'a> AsepriteLayers<'a> {
-    /// Get a layer by its name
-    ///
-    /// If you have its id, prefer fetching it using [`get_by_id`]
-    pub fn get_by_name<N: AsRef<str>>(&self, name: N) -> Option<&AsepriteLayer> {
-        let name = name.as_ref();
-        self.layers
-            .iter()
-            .find(|(_, layer)| layer.name() == name)
-            .map(|(_, layer)| layer)
-    }
-
-    /// Get a layer by its id
-    pub fn get_by_id(&self, id: usize) -> Option<&AsepriteLayer> {
-        self.layers.get(&id)
-    }
-    /// Get inner layers
-    pub fn inner(&self) -> &BTreeMap<usize, AsepriteLayer> {
-        &self.layers
-    }
-    /// 找到提供的 ID 的 layer 属于的所有 groups
-    pub fn find_belong_groups(&self, id: usize) -> Vec<usize> {
-        let Some(layer) = self.layers.get(&id) else {
-            return Vec::new();
-        };
-        let mut cur_child_level = layer.child_level();
-        let mut cur_id = id;
-        let mut result = Vec::new();
-        'find_all_group: while cur_child_level > 0 {
-            cur_child_level -= 1;
-            loop {
-                cur_id -= 1;
-                if let Some(layer) = self.layers.get(&cur_id) {
-                    match layer {
-                        AsepriteLayer::Group {
-                            index, child_level, ..
-                        } => {
-                            if *child_level == cur_child_level {
-                                cur_id = *index;
-                                result.push(*index);
-                                continue 'find_all_group;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-        result
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -599,35 +646,6 @@ impl AsepriteCel {
     }
 }
 
-/// The frames contained in an aseprite
-#[derive(Debug)]
-pub struct AsepriteFrames<'a> {
-    aseprite: &'a Aseprite,
-}
-
-impl<'a> AsepriteFrames<'a> {
-    /// Get a range of frames
-    pub fn get_for(&self, range: &Range<u16>) -> AsepriteFrameRange {
-        AsepriteFrameRange {
-            aseprite: self.aseprite,
-            range: range.clone(),
-        }
-    }
-
-    /// Get single frame
-    pub fn get(&self, frame_index: u16) -> AsepriteFrame {
-        AsepriteFrame {
-            aseprite: self.aseprite,
-            frame_index,
-        }
-    }
-
-    /// Get the amount of frames in this aseprite
-    pub fn count(&self) -> usize {
-        self.aseprite.frame_count
-    }
-}
-
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 /// The nine slices in a nine-patch image
 #[allow(missing_docs)]
@@ -799,129 +817,21 @@ pub struct AsepriteFrameInfo {
 /// TODO 目前看没必要存在这个结构，有空都统一到 Aseprite 上
 pub struct AsepriteFrame<'a> {
     aseprite: &'a Aseprite,
-    frame_index: u16,
+    frame_index: usize,
 }
 
 impl<'a> AsepriteFrame<'a> {
     /// Get the timings
     pub fn get_infos(&self) -> AseResult<&AsepriteFrameInfo> {
-        Ok(&self.aseprite.frame_infos[self.frame_index as usize])
+        Ok(&self.aseprite.frame_infos[self.frame_index])
     }
 
     /// Get images of each layer in this frame
     ///
     /// The key of return map is layer id
-    pub fn get_images(&self) -> AseResult<HashMap<usize, RgbaImage>> {
-        let mut result = HashMap::new();
-
-        for (layer_index, layer) in &self.aseprite.layers {
-            match layer {
-                AsepriteLayer::Group { .. } => continue,
-                _ => {}
-            }
-            let Some(layer_cels) = self.aseprite.cels.get(layer_index) else {
-                continue;
-            };
-            let Some(cel) = layer_cels.get(&(self.frame_index as usize)) else {
-                continue;
-            };
-
-            let write_image = |_cel: &AsepriteCel,
-                               width: u16,
-                               height: u16,
-                               pixels: &[AsepritePixel]|
-             -> AseResult<RgbaImage> {
-                let mut image = RgbaImage::new(width as u32, height as u32);
-                for x in 0..width {
-                    for y in 0..height {
-                        // let pix_x = cel.x as i16 + x as i16;
-                        // let pix_y = cel.y as i16 + y as i16;
-                        let pix_x = x as i16;
-                        let pix_y = y as i16;
-
-                        if pix_x < 0 || pix_y < 0 {
-                            continue;
-                        }
-                        let raw_pixel = &pixels[(x + y * width) as usize];
-                        let pixel = Rgba(raw_pixel.get_rgba(
-                            self.aseprite.palette.as_ref(),
-                            self.aseprite.transparent_palette,
-                        )?);
-
-                        image
-                            .get_pixel_mut(pix_x as u32, pix_y as u32)
-                            .blend(&pixel);
-                    }
-                }
-                Ok(image)
-            };
-
-            match &cel.raw_cel {
-                RawAsepriteCel::Raw {
-                    width,
-                    height,
-                    pixels,
-                }
-                | RawAsepriteCel::Compressed {
-                    width,
-                    height,
-                    pixels,
-                } => {
-                    let image = write_image(&cel, *width, *height, pixels)?;
-                    result.insert(*layer_index, image);
-                }
-                RawAsepriteCel::Linked { frame_position } => {
-                    let frame_index = (*frame_position as usize) - 1;
-                    match &self.aseprite.get_cel(layer_index, &frame_index)?.raw_cel {
-                        RawAsepriteCel::Raw {
-                            width,
-                            height,
-                            pixels,
-                        }
-                        | RawAsepriteCel::Compressed {
-                            width,
-                            height,
-                            pixels,
-                        } => {
-                            let image = write_image(&cel, *width, *height, pixels)?;
-                            result.insert(*layer_index, image);
-                        }
-                        RawAsepriteCel::Linked { frame_position } => {
-                            error!("Tried to draw a linked cel twice! This should not happen, linked cel should not link to a linked cel.");
-                            return Err(AsepriteError::InvalidConfiguration(
-                                AsepriteInvalidError::InvalidFrame(*frame_position as usize),
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(result)
-    }
-}
-
-/// A range of frames in an aseprite
-pub struct AsepriteFrameRange<'a> {
-    aseprite: &'a Aseprite,
-    range: Range<u16>,
-}
-
-impl<'a> AsepriteFrameRange<'a> {
-    /// Get the timings attached to each frame
-    pub fn get_infos(&self) -> AseResult<&[AsepriteFrameInfo]> {
-        Ok(&self.aseprite.frame_infos[self.range.start as usize..self.range.end as usize])
-    }
-
-    /// Get the images represented by this range
-    pub fn get_images(&self) -> AseResult<Vec<RgbaImage>> {
-        let mut frames = vec![];
-        for frame in self.range.clone() {
-            let image = image_for_frame(&self.aseprite, frame)?;
-            frames.push(image);
-        }
-
-        return Ok(frames);
+    pub fn get_image_by_layer(&self, layer_index: &usize) -> AseResult<RgbaImage> {
+        self.aseprite
+            .get_image_by_layer_frame(layer_index, &self.frame_index)
     }
 }
 
@@ -1020,72 +930,70 @@ mod test {
     fn check_aseprite_reader_result() {
         let aseprite = Aseprite::from_path("./tests/test_cases/complex.aseprite").unwrap();
         // println!("{aseprite:#?}");
-        let layers = aseprite.layers();
 
-        let col2row1_layer = layers.get_by_name("Col2Row1").unwrap();
-        let col2row1_layer_group_ids = layers.find_belong_groups(col2row1_layer.index());
+        let col2row1_layer = aseprite.get_layer_by_name("Col2Row1").unwrap();
+        let col2row1_layer_group_ids = aseprite.find_layer_belong_groups(col2row1_layer.index());
         let col2row1_layer_group: Vec<&str> = col2row1_layer_group_ids
             .into_iter()
-            .map(|id| layers.get_by_id(id).unwrap().name())
+            .map(|index| aseprite.get_layer_by_index(&index).unwrap().name())
             .collect();
         assert_eq!(col2row1_layer_group, vec!["Col2", "Table"]);
 
-        // 验证 cel 的图片和属性是否正确
-        let frames = aseprite.frames();
-        let layers = aseprite.layers();
+        // 验证 layer BG1 的属性是否正确
+        {
+            let layer = aseprite.get_layer_by_name("BG1").unwrap();
+            let frame_2_cel = aseprite.get_cel(&layer.index(), &1).unwrap();
 
-        let frame_0 = frames.get(0);
-        if let Ok(images) = frame_0.get_images() {
-            for (layer_id, image) in images {
-                let layer = layers.get_by_id(layer_id).unwrap();
-                match layer.name() {
-                    "BG1" => {
-                        let export_image = image::open("./tests/test_cases/images/complex_BG1.png")
-                            .unwrap()
-                            .to_rgba8();
-                        assert_eq!(image, export_image);
-                        assert_eq!(layer.user_data(), "LayerBG1UserData");
-                    }
-                    "Col1Row1" => {
-                        let export_image =
-                            image::open("./tests/test_cases/images/complex_Col1Row1.png")
-                                .unwrap()
-                                .to_rgba8();
-                        assert_eq!(image, export_image);
-                    }
-                    "Col1" => {
-                        assert_eq!(layer.user_data(), "LayerCol1UserData");
-                    }
-                    _ => {}
-                }
-            }
+            assert_eq!(frame_2_cel.opacity, 128);
         }
 
-        for (layer_index, layer) in layers.layers.iter() {
-            match layer.name() {
-                "BG1" => {
-                    let frame_2_cel = aseprite.get_cel(layer_index,&1).unwrap();
-                    assert_eq!(frame_2_cel.opacity, 128);
-                }
-                _ => {}
-            }
+        // 验证 layer Col1 的属性是否正确
+        {
+            let layer = aseprite.get_layer_by_name("Col1").unwrap();
+
+            assert_eq!(layer.user_data(), "LayerCol1UserData");
+        }
+
+        // 验证 layer BG1 frame 0 的图片和属性是否正确
+        {
+            let layer = aseprite.get_layer_by_name("BG1").unwrap();
+            let layer_index = layer.index();
+            let layer_image = aseprite.get_image_by_layer_frame(&layer_index, &0).unwrap();
+
+            let export_image = image::open("./tests/test_cases/images/complex_BG1.png")
+                .unwrap()
+                .to_rgba8();
+            assert_eq!(layer_image, export_image);
+            assert_eq!(layer.user_data(), "LayerBG1UserData");
+        }
+
+        // 验证 layer Col1Row1 frame 0 的图片和属性是否正确
+        {
+            let layer = aseprite.get_layer_by_name("Col1Row1").unwrap();
+            let layer_index = layer.index();
+            let layer_image = aseprite.get_image_by_layer_frame(&layer_index, &0).unwrap();
+
+            let export_image = image::open("./tests/test_cases/images/complex_Col1Row1.png")
+                .unwrap()
+                .to_rgba8();
+            assert_eq!(layer_image, export_image);
         }
 
         // 验证 layer 的相关属性是否正确
-        let layers = aseprite.layers();
-        for (layer_index, layer) in layers.layers.iter() {
+        for layer in aseprite.layers() {
+            let layer_index = layer.index();
             match layer.name() {
                 "BG1" => {
-                    let cel = aseprite.get_cel(layer_index,&0).unwrap();
+                    let cel = aseprite.get_cel(&layer_index, &0).unwrap();
                     assert_eq!(cel.user_data, "CelBG1Frame1UserData");
-                    let cel = aseprite.get_cel(layer_index,&1).unwrap();
+                    let cel = aseprite.get_cel(&layer_index, &1).unwrap();
                     assert_eq!(cel.user_data, "CelBG1Frame2UserData");
 
                     assert_eq!(layer.blend_mode(), AsepriteBlendMode::Normal);
                     assert_eq!(layer.opacity(), Some(255));
                 }
                 "Col1BG" => {
-                    let cel = aseprite.get_cel(layer_index,&0).unwrap();
+                    let cel = aseprite.get_cel(&layer_index, &0).unwrap();
                     assert_eq!(cel.user_data, "CelCol1BGFrame1UserData");
                 }
                 "Day" => {
@@ -1100,8 +1008,7 @@ mod test {
         }
 
         // 验证 tag 的相关属性是否正确
-        let tags = aseprite.tags();
-        for tag in tags.all() {
+        for tag in aseprite.tags() {
             match tag.name.as_str() {
                 "FrameAllTag" => {
                     assert_eq!(tag.frames, 0..1);
