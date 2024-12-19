@@ -1,21 +1,21 @@
 use std::convert::TryInto;
 
-use crate::{
-    error::{AseParseResult, AseResult, AsepriteError, AsepriteInvalidError, AsepriteParseError},
-    AsepritePalette,
-};
-
 use flate2::Decompress;
 use nom::{
     bytes::complete::{tag, take},
     combinator::{all_consuming, cond},
+    Finish,
     multi::{count, length_data, many1},
     number::complete::{le_i16, le_i32, le_u16, le_u32, le_u8},
-    Finish,
 };
 use tracing::{debug_span, error, info};
 
-// As specified in https://github.com/aseprite/aseprite/blob/fc79146c56f941f834f28809f0d2c4d7fd60076c/docs/ase-file-specs.md
+use crate::{
+    AsepritePalette,
+    error::{AseParseResult, AsepriteError, AsepriteInvalidError, AsepriteParseError, AseResult},
+};
+
+// As specified in https://github.com/aseprite/aseprite/blob/main/docs/ase-file-specs.md
 
 /// Color depth in a single .aseprite file
 #[derive(Debug, PartialEq)]
@@ -683,6 +683,8 @@ pub enum RawAsepriteChunk {
         y: i16,
         /// Opacity of the cel
         opacity: u8,
+        /// Z-Index
+        z_index: i16,
         /// The cel content
         cel: RawAsepriteCel,
     },
@@ -994,7 +996,8 @@ fn cel_chunk<'a>(
     let (input, y) = le_i16(input)?;
     let (input, opacity) = le_u8(input)?;
     let (input, cel_type) = le_u16(input)?;
-    let (input, _) = take(7usize)(input)?;
+    let (input, z_index) = le_i16(input)?;
+    let (input, _) = take(5usize)(input)?;
     // We do not immediately try to load the cel, as the reserved bytes are decoupled from the type itself
     let (input, cel) = aseprite_cel(input, header, cel_type)?;
 
@@ -1005,6 +1008,7 @@ fn cel_chunk<'a>(
             x,
             y,
             opacity,
+            z_index,
             cel,
         },
     ))
@@ -1175,7 +1179,7 @@ pub fn read_aseprite(input: &[u8]) -> Result<RawAseprite, AsepriteError> {
 #[cfg(test)]
 #[allow(deprecated)]
 mod test {
-    use super::{aseprite_frames, aseprite_header, RawAsepriteHeader, ASEPRITE_MAGIC_NUMBER};
+    use super::{aseprite_frames, aseprite_header, ASEPRITE_MAGIC_NUMBER, RawAsepriteHeader};
 
     #[test]
     fn check_valid_file_header() {

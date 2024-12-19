@@ -55,6 +55,15 @@ fn check_aseprite_reader_result() {
         assert_eq!(layer_image, export_image);
     }
 
+    // 验证 layer Col3Row1 frame 1 属性是否正确
+    {
+        let layer = aseprite.get_layer_by_name("Col3Row1").unwrap();
+        let layer_index = layer.index();
+        let layer_cel = aseprite.get_cel(&layer_index, &1).unwrap();
+
+        assert_eq!(layer_cel.z_index, -20);
+    }
+
     // 验证 layer 的相关属性是否正确
     for layer in aseprite.layers() {
         let layer_index = layer.index();

@@ -254,6 +254,7 @@ impl Aseprite {
                         x,
                         y,
                         opacity,
+                        z_index,
                         cel,
                     } => {
                         let layer_cels =
@@ -262,7 +263,7 @@ impl Aseprite {
                         let frame_index = layer_cels.len();
                         layer_cels.insert(
                             frame_index,
-                            AsepriteCel::new(x as f64, y as f64, opacity, cel),
+                            AsepriteCel::new(x as f64, y as f64, opacity, z_index, cel),
                         );
 
                         last_chunk_type =
