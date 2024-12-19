@@ -1,28 +1,35 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    ops::Range,
-    path::Path,
-};
+use std::{collections::BTreeMap, path::Path};
 
 use image::{Pixel, Rgba, RgbaImage};
 use tracing::error;
 
-use crate::raw::{RawAsepriteChunkType, RawAsepriteUserData};
+use cel::*;
+use layer::*;
+pub use palette::*;
+use tag::*;
+
 use crate::{
-    error::{AseResult, AsepriteError, AsepriteInvalidError},
+    error::{AsepriteError, AsepriteInvalidError, AseResult},
     raw::{
-        AsepriteAnimationDirection, AsepriteBlendMode, AsepriteColor, AsepriteColorDepth,
-        AsepriteLayerType, AsepriteNinePatchInfo, AsepritePixel, RawAseprite, RawAsepriteCel,
-        RawAsepriteChunk, RawAsepritePaletteEntry,
+        AsepriteColor, AsepriteColorDepth, AsepritePixel, RawAseprite, RawAsepriteCel,
+        RawAsepriteChunk,
     },
 };
+use crate::raw::RawAsepriteChunkType;
+
+mod cel;
+mod layer;
+mod palette;
+mod tag;
+#[cfg(test)]
+#[allow(deprecated)]
+mod test;
 
 #[derive(Debug, Clone)]
 /// Data structure representing an Aseprite file
 pub struct Aseprite {
     dimensions: (u16, u16),
     tags: BTreeMap<usize, AsepriteTag>,
-    slices: HashMap<String, AsepriteSlice>,
     layers: BTreeMap<usize, AsepriteLayer>,
     cels: BTreeMap<usize, BTreeMap<usize, AsepriteCel>>,
     frame_count: usize,
@@ -51,11 +58,6 @@ impl Aseprite {
             aseprite: self,
             frame_index,
         })
-    }
-
-    /// Get the slices inside this aseprite
-    pub fn slices(&self) -> AsepriteSlices {
-        AsepriteSlices { aseprite: self }
     }
 
     /// Get the cel of giving layer and frame
@@ -203,7 +205,6 @@ impl Aseprite {
         let mut cels = BTreeMap::new();
         let mut palette = None;
         let mut frame_infos = vec![];
-        let mut slices = HashMap::new();
 
         let frame_count = raw.frames.len();
 
@@ -320,36 +321,8 @@ impl Aseprite {
                             _ => {}
                         }
                     }
-                    RawAsepriteChunk::Slice {
-                        name,
-                        slices: raw_slices,
-                        ..
-                    } => {
-                        slices.extend(raw_slices.into_iter().map(
-                            |crate::raw::RawAsepriteSlice {
-                                 frame,
-                                 x_origin,
-                                 y_origin,
-                                 width,
-                                 height,
-                                 nine_patch_info,
-                                 ..
-                             }| {
-                                (
-                                    name.clone(),
-                                    AsepriteSlice {
-                                        name: name.clone(),
-                                        valid_frame: frame as u16,
-                                        position_x: x_origin,
-                                        position_y: y_origin,
-                                        width,
-                                        height,
-                                        nine_patch_info,
-                                    },
-                                )
-                            },
-                        ));
-                        last_chunk_type = RawAsepriteChunkType::Slice;
+                    RawAsepriteChunk::Slice { .. } => {
+                        todo!("Not yet implemented slice")
                     }
                     RawAsepriteChunk::CelExtra { .. } => {
                         todo!("Not yet implemented cel extra")
@@ -375,7 +348,6 @@ impl Aseprite {
             frame_count,
             palette,
             frame_infos,
-            slices,
         })
     }
 
@@ -393,416 +365,6 @@ impl Aseprite {
         let raw_aseprite = crate::raw::read_aseprite(buffer.as_ref())?;
 
         Ok(Self::from_raw(raw_aseprite)?)
-    }
-}
-
-/// The palette entries in the aseprite file
-#[allow(missing_docs)]
-#[derive(Debug, Clone)]
-pub struct AsepritePalette {
-    pub entries: Vec<AsepriteColor>,
-}
-
-impl AsepritePalette {
-    fn from_raw(
-        palette_size: u32,
-        from_color: u32,
-        raw_entries: Vec<RawAsepritePaletteEntry>,
-    ) -> Self {
-        let mut entries = vec![
-            AsepriteColor {
-                red: 0,
-                green: 0,
-                blue: 0,
-                alpha: 0
-            };
-            palette_size as usize
-        ];
-
-        for (raw_idx, idx) in ((from_color as usize)..entries.len()).enumerate() {
-            entries[idx] = raw_entries[raw_idx].color;
-        }
-
-        AsepritePalette { entries }
-    }
-}
-
-#[derive(Debug, Clone)]
-/// A single Aseprite tag
-pub struct AsepriteTag {
-    /// The tag index
-    pub index: usize,
-    /// The frames which this tag represents
-    pub frames: Range<u16>,
-    /// The direction of its animation
-    pub animation_direction: AsepriteAnimationDirection,
-    /// The tag name
-    pub name: String,
-    /// Tag color
-    pub color: AsepriteColor,
-    /// Tag user data
-    pub user_data: String,
-}
-
-impl AsepriteTag {
-    fn apply_raw_user_data(&mut self, value: RawAsepriteUserData) {
-        self.color = value.color;
-        self.user_data = value.text;
-    }
-}
-
-#[derive(Debug, Clone)]
-/// A single Aseprite slice
-pub struct AsepriteSlice {
-    /// The slice name
-    pub name: String,
-    /// The frame from which it is valid
-    pub valid_frame: u16,
-    /// The slice's x position
-    pub position_x: i32,
-    /// The slice's y position
-    pub position_y: i32,
-    /// The slice's width
-    pub width: u32,
-    /// The slice's height
-    pub height: u32,
-    /// Nine-Patch Info if it exists
-    pub nine_patch_info: Option<AsepriteNinePatchInfo>,
-}
-
-#[derive(Debug, Clone)]
-/// An aseprite layer
-pub enum AsepriteLayer {
-    /// A layer group
-    Group {
-        /// Name of the layer
-        name: String,
-        /// Index of the layer
-        ///
-        /// 所有 Layer Chunk 都是存储在一起的，这是按照 Layer Chunk 存储的顺序来决定，从 0 开始，对应了 aseprite 文件中从下到上的 layer 顺序
-        index: usize,
-        /// Visibility of the layer
-        visible: bool,
-        /// How deep it is nested in the layer hierarchy
-        child_level: u16,
-        /// Layer color
-        color: AsepriteColor,
-        /// Layer user data
-        user_data: String,
-    },
-    /// A normal layer
-    Normal {
-        /// Name of the layer
-        name: String,
-        /// Index of the layer
-        ///
-        /// 所有 Layer Chunk 都是存储在一起的，这是按照 Layer Chunk 存储的顺序来决定，从 0 开始，对应了 aseprite 文件中从下到上的 layer 顺序
-        index: usize,
-        /// Blend mode of this layer
-        blend_mode: AsepriteBlendMode,
-        /// Opacity of this layer (if enabled)
-        opacity: Option<u8>,
-        /// Visibility of this layer
-        visible: bool,
-        /// How deep it is nested in the layer hierarchy
-        child_level: u16,
-        /// Cels
-        cels: Vec<AsepriteCel>,
-        /// Layer color
-        color: AsepriteColor,
-        /// Layer user data
-        user_data: String,
-    },
-}
-
-impl AsepriteLayer {
-    fn new(
-        index: usize,
-        name: String,
-        layer_type: AsepriteLayerType,
-        visible: bool,
-        blend_mode: AsepriteBlendMode,
-        opacity: Option<u8>,
-        child_level: u16,
-    ) -> Self {
-        match layer_type {
-            AsepriteLayerType::Normal => AsepriteLayer::Normal {
-                name,
-                index,
-                blend_mode,
-                opacity,
-                visible,
-                child_level,
-                cels: vec![],
-                color: AsepriteColor::default(),
-                user_data: String::new(),
-            },
-            AsepriteLayerType::Group => AsepriteLayer::Group {
-                name,
-                index,
-                visible,
-                child_level,
-                color: AsepriteColor::default(),
-                user_data: String::new(),
-            },
-        }
-    }
-
-    /// Get the name of the layer
-    pub fn name(&self) -> &str {
-        match self {
-            AsepriteLayer::Group { name, .. } | AsepriteLayer::Normal { name, .. } => &name,
-        }
-    }
-
-    /// Get the index of the layer
-    pub fn index(&self) -> usize {
-        match self {
-            AsepriteLayer::Group { index, .. } | AsepriteLayer::Normal { index, .. } => *index,
-        }
-    }
-
-    /// Get the visibility of the layer
-    pub fn is_visible(&self) -> bool {
-        match self {
-            AsepriteLayer::Group { visible, .. } | AsepriteLayer::Normal { visible, .. } => {
-                *visible
-            }
-        }
-    }
-
-    /// Get child level of the layer
-    pub fn child_level(&self) -> u16 {
-        match self {
-            AsepriteLayer::Group { child_level, .. }
-            | AsepriteLayer::Normal { child_level, .. } => *child_level,
-        }
-    }
-
-    /// Get blend mode of normal layer
-    pub fn blend_mode(&self) -> AsepriteBlendMode {
-        match self {
-            AsepriteLayer::Group { .. } => AsepriteBlendMode::Normal,
-            AsepriteLayer::Normal { blend_mode, .. } => *blend_mode,
-        }
-    }
-
-    /// Get opacity of normal layer
-    pub fn opacity(&self) -> Option<u8> {
-        match self {
-            AsepriteLayer::Group { .. } => None,
-            AsepriteLayer::Normal { opacity, .. } => *opacity,
-        }
-    }
-
-    fn apply_raw_user_data(&mut self, value: RawAsepriteUserData) {
-        match self {
-            AsepriteLayer::Group {
-                color, user_data, ..
-            } => {
-                *color = value.color;
-                *user_data = value.text;
-            }
-            AsepriteLayer::Normal {
-                color, user_data, ..
-            } => {
-                *color = value.color;
-                *user_data = value.text;
-            }
-        }
-    }
-
-    /// Get user data of the layer
-    pub fn user_data(&self) -> &str {
-        return match self {
-            AsepriteLayer::Group { user_data, .. } => user_data.as_str(),
-            AsepriteLayer::Normal { user_data, .. } => user_data.as_str(),
-        };
-    }
-}
-
-#[derive(Debug, Clone)]
-/// A single cel in a frame in a layer
-pub struct AsepriteCel {
-    x: f64,
-    y: f64,
-    #[allow(dead_code)]
-    opacity: u8,
-    raw_cel: RawAsepriteCel,
-    color: AsepriteColor,
-    user_data: String,
-}
-
-impl AsepriteCel {
-    fn new(x: f64, y: f64, opacity: u8, raw_cel: RawAsepriteCel) -> Self {
-        AsepriteCel {
-            x,
-            y,
-            opacity,
-            raw_cel,
-            color: AsepriteColor::default(),
-            user_data: String::new(),
-        }
-    }
-}
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-/// The nine slices in a nine-patch image
-#[allow(missing_docs)]
-pub enum NineSlice {
-    TopLeft,
-    TopCenter,
-    TopRight,
-    RightCenter,
-    BottomRight,
-    BottomCenter,
-    BottomLeft,
-    LeftCenter,
-    Center,
-}
-
-/// A single slice image
-///
-/// Only contains nine-patch info if the aseprite also contained one
-#[allow(missing_docs)]
-pub struct AsepriteSliceImage {
-    pub image: RgbaImage,
-    pub nine_slices: Option<HashMap<NineSlice, RgbaImage>>,
-}
-
-/// The slices contained in an aseprite
-#[derive(Debug)]
-pub struct AsepriteSlices<'a> {
-    aseprite: &'a Aseprite,
-}
-
-impl<'a> AsepriteSlices<'a> {
-    /// Get a slice by name
-    pub fn get_by_name(&self, name: &str) -> Option<&AsepriteSlice> {
-        self.aseprite.slices.get(name)
-    }
-
-    /// Get all slices in this aseprite
-    pub fn get_all(&self) -> impl Iterator<Item = &AsepriteSlice> + '_ {
-        self.aseprite.slices.values()
-    }
-
-    /// Get the images represented by the slices
-    pub fn get_images<I: Iterator<Item = &'a AsepriteSlice>>(
-        &self,
-        wanted_slices: I,
-    ) -> AseResult<Vec<AsepriteSliceImage>> {
-        let mut slices = vec![];
-
-        for slice in wanted_slices {
-            let frame = image_for_frame(self.aseprite, slice.valid_frame)?;
-
-            let image = image::imageops::crop_imm(
-                &frame,
-                slice.position_x.max(0) as u32,
-                slice.position_y.max(0) as u32,
-                slice.width,
-                slice.height,
-            )
-            .to_image();
-
-            let slice_image = AsepriteSliceImage {
-                nine_slices: slice.nine_patch_info.as_ref().map(|info| {
-                    let mut map: HashMap<_, RgbaImage> = HashMap::new();
-
-                    let patch_x = info.x_center as u32;
-                    let patch_y = info.y_center as u32;
-
-                    let x = 0;
-                    let y = 0;
-                    let width = patch_x;
-                    let height = patch_y;
-                    map.insert(
-                        NineSlice::TopLeft,
-                        image::imageops::crop_imm(&image, x, y, width, height).to_image(),
-                    );
-
-                    let x = patch_x;
-                    let y = 0;
-                    let width = info.width;
-                    let height = patch_y;
-                    map.insert(
-                        NineSlice::TopCenter,
-                        image::imageops::crop_imm(&image, x, y, width, height).to_image(),
-                    );
-
-                    let x = patch_x + info.width;
-                    let y = 0;
-                    let width = slice.width - info.width - patch_x;
-                    let height = patch_y;
-                    map.insert(
-                        NineSlice::TopRight,
-                        image::imageops::crop_imm(&image, x, y, width, height).to_image(),
-                    );
-
-                    let x = patch_x + info.width;
-                    let y = patch_y;
-                    let width = slice.width - info.width - patch_x;
-                    let height = info.height;
-                    map.insert(
-                        NineSlice::RightCenter,
-                        image::imageops::crop_imm(&image, x, y, width, height).to_image(),
-                    );
-
-                    let x = patch_x + info.width;
-                    let y = info.height + patch_y;
-                    let width = slice.width - info.width - patch_x;
-                    let height = slice.height - info.height - patch_y;
-                    map.insert(
-                        NineSlice::BottomRight,
-                        image::imageops::crop_imm(&image, x, y, width, height).to_image(),
-                    );
-
-                    let x = patch_x;
-                    let y = patch_y + info.height;
-                    let width = info.width;
-                    let height = slice.height - info.height - patch_y;
-                    map.insert(
-                        NineSlice::BottomCenter,
-                        image::imageops::crop_imm(&image, x, y, width, height).to_image(),
-                    );
-
-                    let x = 0;
-                    let y = patch_y + info.height;
-                    let width = patch_x;
-                    let height = slice.height - info.height - patch_y;
-                    map.insert(
-                        NineSlice::BottomLeft,
-                        image::imageops::crop_imm(&image, x, y, width, height).to_image(),
-                    );
-
-                    let x = 0;
-                    let y = patch_y;
-                    let width = patch_x;
-                    let height = info.height;
-                    map.insert(
-                        NineSlice::LeftCenter,
-                        image::imageops::crop_imm(&image, x, y, width, height).to_image(),
-                    );
-
-                    let x = patch_x;
-                    let y = patch_y;
-                    let width = info.width;
-                    let height = info.height;
-                    map.insert(
-                        NineSlice::Center,
-                        image::imageops::crop_imm(&image, x, y, width, height).to_image(),
-                    );
-
-                    map
-                }),
-                image,
-            };
-
-            slices.push(slice_image);
-        }
-
-        Ok(slices)
     }
 }
 
@@ -838,6 +400,7 @@ impl<'a> AsepriteFrame<'a> {
 /// 这个方法是获取某一帧所有可见图层合并后的图片
 ///
 /// TODO 没有处理透明度和混合模式的效果
+#[allow(unused)]
 fn image_for_frame(aseprite: &Aseprite, frame_index: u16) -> AseResult<RgbaImage> {
     let dim = aseprite.dimensions;
     let frame_index = frame_index as usize;
@@ -918,111 +481,4 @@ fn image_for_frame(aseprite: &Aseprite, frame_index: u16) -> AseResult<RgbaImage
     }
 
     Ok(image)
-}
-
-#[cfg(test)]
-#[allow(deprecated)]
-mod test {
-    use crate::raw::AsepriteBlendMode;
-    use crate::Aseprite;
-
-    #[test]
-    fn check_aseprite_reader_result() {
-        let aseprite = Aseprite::from_path("./tests/test_cases/complex.aseprite").unwrap();
-        // println!("{aseprite:#?}");
-
-        let col2row1_layer = aseprite.get_layer_by_name("Col2Row1").unwrap();
-        let col2row1_layer_group_ids = aseprite.find_layer_belong_groups(col2row1_layer.index());
-        let col2row1_layer_group: Vec<&str> = col2row1_layer_group_ids
-            .into_iter()
-            .map(|index| aseprite.get_layer_by_index(&index).unwrap().name())
-            .collect();
-        assert_eq!(col2row1_layer_group, vec!["Col2", "Table"]);
-
-        // 验证 layer BG1 的属性是否正确
-        {
-            let layer = aseprite.get_layer_by_name("BG1").unwrap();
-            let frame_2_cel = aseprite.get_cel(&layer.index(), &1).unwrap();
-
-            assert_eq!(frame_2_cel.opacity, 128);
-        }
-
-        // 验证 layer Col1 的属性是否正确
-        {
-            let layer = aseprite.get_layer_by_name("Col1").unwrap();
-
-            assert_eq!(layer.user_data(), "LayerCol1UserData");
-        }
-
-        // 验证 layer BG1 frame 0 的图片和属性是否正确
-        {
-            let layer = aseprite.get_layer_by_name("BG1").unwrap();
-            let layer_index = layer.index();
-            let layer_image = aseprite.get_image_by_layer_frame(&layer_index, &0).unwrap();
-
-            let export_image = image::open("./tests/test_cases/images/complex_BG1.png")
-                .unwrap()
-                .to_rgba8();
-            assert_eq!(layer_image, export_image);
-            assert_eq!(layer.user_data(), "LayerBG1UserData");
-        }
-
-        // 验证 layer Col1Row1 frame 0 的图片和属性是否正确
-        {
-            let layer = aseprite.get_layer_by_name("Col1Row1").unwrap();
-            let layer_index = layer.index();
-            let layer_image = aseprite.get_image_by_layer_frame(&layer_index, &0).unwrap();
-
-            let export_image = image::open("./tests/test_cases/images/complex_Col1Row1.png")
-                .unwrap()
-                .to_rgba8();
-            assert_eq!(layer_image, export_image);
-        }
-
-        // 验证 layer 的相关属性是否正确
-        for layer in aseprite.layers() {
-            let layer_index = layer.index();
-            match layer.name() {
-                "BG1" => {
-                    let cel = aseprite.get_cel(&layer_index, &0).unwrap();
-                    assert_eq!(cel.user_data, "CelBG1Frame1UserData");
-                    let cel = aseprite.get_cel(&layer_index, &1).unwrap();
-                    assert_eq!(cel.user_data, "CelBG1Frame2UserData");
-
-                    assert_eq!(layer.blend_mode(), AsepriteBlendMode::Normal);
-                    assert_eq!(layer.opacity(), Some(255));
-                }
-                "Col1BG" => {
-                    let cel = aseprite.get_cel(&layer_index, &0).unwrap();
-                    assert_eq!(cel.user_data, "CelCol1BGFrame1UserData");
-                }
-                "Day" => {
-                    assert_eq!(layer.blend_mode(), AsepriteBlendMode::SoftLight);
-                    assert_eq!(layer.opacity(), Some(128));
-                }
-                "Night" => {
-                    assert!(!layer.is_visible());
-                }
-                _ => {}
-            }
-        }
-
-        // 验证 tag 的相关属性是否正确
-        for tag in aseprite.tags() {
-            match tag.name.as_str() {
-                "FrameAllTag" => {
-                    assert_eq!(tag.frames, 0..1);
-                    assert_eq!(tag.user_data, "FrameAllTagUserData");
-                }
-                "Frame1Tag" => {
-                    assert_eq!(tag.frames, 0..0);
-                }
-                "Frame2Tag" => {
-                    assert_eq!(tag.frames, 1..1);
-                    assert_eq!(tag.user_data, "Frame2TagUserData");
-                }
-                _ => {}
-            }
-        }
-    }
 }
