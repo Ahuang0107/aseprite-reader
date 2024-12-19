@@ -7,6 +7,8 @@ pub struct AsepriteCel {
     pub(super) y: f64,
     #[allow(dead_code)]
     pub(super) opacity: u8,
+    /// 针对某一帧判断图层顺序时，需要比较 layer index + z-index 的结果
+    /// 如果相同，再比较 z-index
     #[allow(dead_code)]
     pub(super) z_index: i16,
     pub(super) raw_cel: RawAsepriteCel,
