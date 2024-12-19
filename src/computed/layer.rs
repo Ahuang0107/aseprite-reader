@@ -1,7 +1,5 @@
 use crate::raw::{AsepriteBlendMode, AsepriteColor, AsepriteLayerType, RawAsepriteUserData};
 
-use super::AsepriteCel;
-
 #[derive(Debug, Clone)]
 /// An aseprite layer
 pub enum AsepriteLayer {
@@ -38,8 +36,6 @@ pub enum AsepriteLayer {
         visible: bool,
         /// How deep it is nested in the layer hierarchy
         child_level: u16,
-        /// Cels
-        cels: Vec<AsepriteCel>,
         /// Layer color
         color: AsepriteColor,
         /// Layer user data
@@ -65,7 +61,6 @@ impl AsepriteLayer {
                 opacity,
                 visible,
                 child_level,
-                cels: vec![],
                 color: AsepriteColor::default(),
                 user_data: String::new(),
             },
