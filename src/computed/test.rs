@@ -34,7 +34,7 @@ fn check_aseprite_reader_result() {
     {
         let layer = aseprite.get_layer_by_name("BG1").unwrap();
         let layer_index = layer.index();
-        let layer_image = aseprite.get_image_by_layer_frame(&layer_index, &0).unwrap();
+        let layer_image = aseprite.get_image_by_layer_frame(&layer_index, &0).unwrap().unwrap();
 
         let export_image = image::open("./tests/test_cases/images/complex_BG1.png")
             .unwrap()
@@ -47,7 +47,7 @@ fn check_aseprite_reader_result() {
     {
         let layer = aseprite.get_layer_by_name("Col1Row1").unwrap();
         let layer_index = layer.index();
-        let layer_image = aseprite.get_image_by_layer_frame(&layer_index, &0).unwrap();
+        let layer_image = aseprite.get_image_by_layer_frame(&layer_index, &0).unwrap().unwrap();
 
         let export_image = image::open("./tests/test_cases/images/complex_Col1Row1.png")
             .unwrap()

@@ -61,15 +61,14 @@ impl Aseprite {
     }
 
     /// Get the cel of giving layer and frame
-    pub fn get_cel(&self, layer_index: &usize, frame_index: &usize) -> AseResult<&AsepriteCel> {
-        let layer_cels = self
-            .cels
-            .get(layer_index)
-            .ok_or(AsepriteInvalidError::InvalidLayer(*layer_index))?;
-        let cel = layer_cels
-            .get(frame_index)
-            .ok_or(AsepriteInvalidError::InvalidFrame(*frame_index))?;
-        Ok(cel)
+    pub fn get_cel(&self, layer_index: &usize, frame_index: &usize) -> Option<&AsepriteCel> {
+        let Some(layer_cels) = self.cels.get(layer_index) else {
+            return None;
+        };
+        let Some(cel) = layer_cels.get(frame_index) else {
+            return None;
+        };
+        Some(cel)
     }
 
     /// Get a layer by its name
@@ -102,9 +101,9 @@ impl Aseprite {
                 cur_index -= 1;
                 if let Some(layer) = self.layers.get(&cur_index) {
                     match layer {
-                        AsepriteLayer::Group {
+                        AsepriteLayer::Group(GroupLayer {
                             index, child_level, ..
-                        } => {
+                                             }) => {
                             if *child_level == cur_child_level {
                                 cur_index = *index;
                                 result.push(*index);
@@ -159,8 +158,10 @@ impl Aseprite {
         &self,
         layer_index: &usize,
         frame_index: &usize,
-    ) -> AseResult<RgbaImage> {
-        let cel = self.get_cel(layer_index, frame_index)?;
+    ) -> AseResult<Option<RgbaImage>> {
+        let Some(cel) = self.get_cel(layer_index, frame_index) else {
+            return Ok(None);
+        };
         match &cel.raw_cel {
             RawAsepriteCel::Raw {
                 width,
@@ -171,10 +172,13 @@ impl Aseprite {
                 width,
                 height,
                 pixels,
-            } => Ok(self.write_image(None, *width, *height, pixels)?),
+            } => Ok(Some(self.write_image(None, *width, *height, pixels)?)),
             RawAsepriteCel::Linked { frame_position } => {
                 let frame_index = (*frame_position as usize) - 1;
-                match &self.get_cel(layer_index, &frame_index)?.raw_cel {
+                let Some(linked_cel) = self.get_cel(layer_index, &frame_index) else {
+                    return Ok(None);
+                };
+                match &linked_cel.raw_cel {
                     RawAsepriteCel::Raw {
                         width,
                         height,
@@ -184,7 +188,7 @@ impl Aseprite {
                         width,
                         height,
                         pixels,
-                    } => Ok(self.write_image(None, *width, *height, pixels)?),
+                    } => Ok(Some(self.write_image(None, *width, *height, pixels)?)),
                     RawAsepriteCel::Linked { frame_position } => {
                         error!("Tried to draw a linked cel twice! This should not happen, linked cel should not link to a linked cel.");
                         Err(AsepriteError::InvalidConfiguration(
@@ -391,7 +395,7 @@ impl<'a> AsepriteFrame<'a> {
     /// Get images of each layer in this frame
     ///
     /// The key of return map is layer id
-    pub fn get_image_by_layer(&self, layer_index: &usize) -> AseResult<RgbaImage> {
+    pub fn get_image_by_layer(&self, layer_index: &usize) -> AseResult<Option<RgbaImage>> {
         self.aseprite
             .get_image_by_layer_frame(layer_index, &self.frame_index)
     }
@@ -410,7 +414,7 @@ fn image_for_frame(aseprite: &Aseprite, frame_index: u16) -> AseResult<RgbaImage
             continue;
         }
 
-        let Ok(cel) = aseprite.get_cel(layer_index, &frame_index) else {
+        let Some(cel) = aseprite.get_cel(layer_index, &frame_index) else {
             continue;
         };
 
@@ -456,7 +460,14 @@ fn image_for_frame(aseprite: &Aseprite, frame_index: u16) -> AseResult<RgbaImage
             }
             RawAsepriteCel::Linked { frame_position } => {
                 let frame_index = *frame_position as usize - 1;
-                match &aseprite.get_cel(layer_index, &frame_index)?.raw_cel {
+
+                let Some(linked_cel) = &aseprite.get_cel(layer_index, &frame_index) else {
+                    return Err(AsepriteError::InvalidConfiguration(
+                        AsepriteInvalidError::InvalidFrame(*frame_position as usize),
+                    ));
+                };
+
+                match &linked_cel.raw_cel {
                     RawAsepriteCel::Raw {
                         width,
                         height,
