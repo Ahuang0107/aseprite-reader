@@ -18,7 +18,7 @@ fn check_aseprite_reader_result() {
     // 验证 layer BG1 的属性是否正确
     {
         let layer = aseprite.get_layer_by_name("BG1").unwrap();
-        let frame_2_cel = aseprite.get_cel(&layer.index(), &1).unwrap();
+        let frame_2_cel = aseprite.get_cel(&layer.index(), &1);
 
         assert_eq!(frame_2_cel.opacity, 128);
     }
@@ -59,7 +59,7 @@ fn check_aseprite_reader_result() {
     {
         let layer = aseprite.get_layer_by_name("Col3Row1").unwrap();
         let layer_index = layer.index();
-        let layer_cel = aseprite.get_cel(&layer_index, &1).unwrap();
+        let layer_cel = aseprite.get_cel(&layer_index, &1);
 
         assert_eq!(layer_cel.z_index, -20);
     }
@@ -69,16 +69,16 @@ fn check_aseprite_reader_result() {
         let layer_index = layer.index();
         match layer.name() {
             "BG1" => {
-                let cel = aseprite.get_cel(&layer_index, &0).unwrap();
+                let cel = aseprite.get_cel(&layer_index, &0);
                 assert_eq!(cel.user_data, "CelBG1Frame1UserData");
-                let cel = aseprite.get_cel(&layer_index, &1).unwrap();
+                let cel = aseprite.get_cel(&layer_index, &1);
                 assert_eq!(cel.user_data, "CelBG1Frame2UserData");
 
                 assert_eq!(layer.blend_mode(), AsepriteBlendMode::Normal);
                 assert_eq!(layer.opacity(), Some(255));
             }
             "Col1BG" => {
-                let cel = aseprite.get_cel(&layer_index, &0).unwrap();
+                let cel = aseprite.get_cel(&layer_index, &0);
                 assert_eq!(cel.user_data, "CelCol1BGFrame1UserData");
             }
             "Day" => {
