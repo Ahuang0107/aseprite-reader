@@ -257,6 +257,7 @@ impl Aseprite {
         // 记录上一个处理过的 chunk 类型，处理 user data 时需要知道他跟随在哪个 chunk 后面
         let mut last_chunk_type = RawAsepriteChunkType::ColorProfile;
 
+        let mut cur_frame_index = 0;
         for frame in raw.frames {
             frame_infos.push(AsepriteFrameInfo {
                 delay_ms: frame.duration_ms as usize,
@@ -302,14 +303,13 @@ impl Aseprite {
                         let layer_cels =
                             cels.entry(layer_index as usize).or_insert(BTreeMap::new());
 
-                        let frame_index = layer_cels.len();
                         layer_cels.insert(
-                            frame_index,
+                            cur_frame_index,
                             AsepriteCel::new(x as f64, y as f64, opacity, z_index, cel),
                         );
 
                         last_chunk_type =
-                            RawAsepriteChunkType::Cel(layer_index as usize, frame_index);
+                            RawAsepriteChunkType::Cel(layer_index as usize, cur_frame_index);
                     }
                     RawAsepriteChunk::Tags { tags: raw_tags } => {
                         let start_index = tags.len();
@@ -380,6 +380,7 @@ impl Aseprite {
                     }
                 }
             }
+            cur_frame_index += 1;
         }
 
         Ok(Aseprite {
