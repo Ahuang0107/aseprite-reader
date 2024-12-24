@@ -56,6 +56,7 @@ impl Aseprite {
 
     /// 获取特定帧的所有 layer 和对应的 z-index
     /// 因为单个 cel 可以调整 z-index, 所以每一帧 layer 的显示顺序可能是不同的
+    #[deprecated]
     pub fn layers_by_frame(&self, frame_index: &usize) -> Vec<(AsepriteLayer, i16)> {
         let mut layers: Vec<(AsepriteLayer, i16)> =
             self.layers.values().map(|l| (l.clone(), 0)).collect();
@@ -71,11 +72,13 @@ impl Aseprite {
     }
 
     /// Get frame count
+    #[deprecated]
     pub fn frame_count(&self) -> usize {
         self.frame_count
     }
 
     /// Get the frames inside this aseprite
+    #[deprecated]
     pub fn get_frame(&self, frame_index: usize) -> Option<AsepriteFrame> {
         if frame_index >= self.frame_count {
             return None;
@@ -87,17 +90,19 @@ impl Aseprite {
     }
 
     /// Get the cel of giving layer and frame
-    pub fn get_cel(&self, layer_index: &usize, frame_index: &usize) -> &AsepriteCel {
+    /// If cel is empty return None
+    pub fn get_cel(&self, layer_index: &usize, frame_index: &usize) -> Option<&AsepriteCel> {
         let Some(layer_cels) = self.cels.get(layer_index) else {
-            panic!()
+            return None;
         };
         let Some(cel) = layer_cels.get(frame_index) else {
-            panic!()
+            return None;
         };
-        cel
+        Some(cel)
     }
 
     /// Get cels of giving frame
+    #[deprecated]
     pub fn get_cels_by_frame(&self, frame_index: &usize) -> Vec<&AsepriteCel> {
         self.cels
             .values()
@@ -108,6 +113,7 @@ impl Aseprite {
     /// Get a layer by its name
     ///
     /// If you have its id, prefer fetching it using [`get_by_id`]
+    #[cfg(test)]
     pub fn get_layer_by_name<N: AsRef<str>>(&self, name: N) -> Option<&AsepriteLayer> {
         let name = name.as_ref();
         self.layers
@@ -117,6 +123,7 @@ impl Aseprite {
     }
 
     /// Get a layer by its index
+    #[deprecated]
     pub fn get_layer_by_index(&self, index: &usize) -> Option<&AsepriteLayer> {
         self.layers.get(index)
     }
@@ -194,7 +201,9 @@ impl Aseprite {
         layer_index: &usize,
         frame_index: &usize,
     ) -> AseResult<Option<RgbaImage>> {
-        let cel = self.get_cel(layer_index, frame_index);
+        let Some(cel) = self.get_cel(layer_index, frame_index) else {
+            return Ok(None);
+        };
         match &cel.raw_cel {
             RawAsepriteCel::Raw {
                 width,
@@ -208,7 +217,9 @@ impl Aseprite {
             } => Ok(Some(self.write_image(None, *width, *height, pixels)?)),
             RawAsepriteCel::Linked { frame_position } => {
                 let frame_index = (*frame_position as usize) - 1;
-                let linked_cel = self.get_cel(layer_index, &frame_index);
+                let Some(linked_cel) = self.get_cel(layer_index, &frame_index) else {
+                    unimplemented!("不应该出现这种情况")
+                };
                 match &linked_cel.raw_cel {
                     RawAsepriteCel::Raw {
                         width,
@@ -446,7 +457,9 @@ fn image_for_frame(aseprite: &Aseprite, frame_index: u16) -> AseResult<RgbaImage
             continue;
         }
 
-        let cel = aseprite.get_cel(layer_index, &frame_index);
+        let Some(cel) = aseprite.get_cel(layer_index, &frame_index) else {
+            continue;
+        };
 
         let mut write_to_image = |cel: &AsepriteCel,
                                   width: u16,
@@ -491,7 +504,9 @@ fn image_for_frame(aseprite: &Aseprite, frame_index: u16) -> AseResult<RgbaImage
             RawAsepriteCel::Linked { frame_position } => {
                 let frame_index = *frame_position as usize - 1;
 
-                let linked_cel = &aseprite.get_cel(layer_index, &frame_index);
+                let Some(linked_cel) = &aseprite.get_cel(layer_index, &frame_index) else {
+                    unimplemented!("不应该出现这种情况")
+                };
 
                 match &linked_cel.raw_cel {
                     RawAsepriteCel::Raw {
