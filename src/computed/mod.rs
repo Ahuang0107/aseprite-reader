@@ -173,8 +173,8 @@ impl Aseprite {
                 let mut pix_x = x as i16;
                 let mut pix_y = y as i16;
                 if let Some(cel) = &cel {
-                    pix_x += cel.x as i16;
-                    pix_y += cel.y as i16
+                    pix_x += cel.x;
+                    pix_y += cel.y;
                 }
 
                 if pix_x < 0 || pix_y < 0 {
@@ -305,7 +305,7 @@ impl Aseprite {
 
                         layer_cels.insert(
                             cur_frame_index,
-                            AsepriteCel::new(x as f64, y as f64, opacity, z_index, cel),
+                            AsepriteCel::new(x, y, opacity, z_index, cel),
                         );
 
                         last_chunk_type =
@@ -469,8 +469,8 @@ fn image_for_frame(aseprite: &Aseprite, frame_index: u16) -> AseResult<RgbaImage
          -> AseResult<()> {
             for x in 0..width {
                 for y in 0..height {
-                    let pix_x = cel.x as i16 + x as i16;
-                    let pix_y = cel.y as i16 + y as i16;
+                    let pix_x = cel.x + x as i16;
+                    let pix_y = cel.y + y as i16;
 
                     if pix_x < 0 || pix_y < 0 {
                         continue;

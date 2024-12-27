@@ -4,9 +4,9 @@ use crate::raw::{AsepriteColor, RawAsepriteCel};
 /// A single cel in a frame in a layer
 pub struct AsepriteCel {
     /// 表示相对于整个 sprite 左上角的位置
-    pub x: f64,
+    pub x: i16,
     /// 表示相对于整个 sprite 左上角的位置
-    pub y: f64,
+    pub y: i16,
     /// 表示单个 cel 的透明度
     #[allow(dead_code)]
     pub opacity: u8,
@@ -23,7 +23,7 @@ pub struct AsepriteCel {
 }
 
 impl AsepriteCel {
-    pub(super) fn new(x: f64, y: f64, opacity: u8, z_index: i16, raw_cel: RawAsepriteCel) -> Self {
+    pub(super) fn new(x: i16, y: i16, opacity: u8, z_index: i16, raw_cel: RawAsepriteCel) -> Self {
         AsepriteCel {
             x,
             y,
