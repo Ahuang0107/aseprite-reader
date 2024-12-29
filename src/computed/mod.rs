@@ -12,10 +12,9 @@ use crate::{
     error::{AsepriteError, AsepriteInvalidError, AseResult},
     raw::{
         AsepriteColor, AsepriteColorDepth, AsepritePixel, RawAseprite, RawAsepriteCel,
-        RawAsepriteChunk,
+        RawAsepriteChunk, RawAsepriteChunkType,
     },
 };
-use crate::raw::RawAsepriteChunkType;
 
 mod cel;
 mod layer;
@@ -52,6 +51,11 @@ impl Aseprite {
     /// Get the associated [`AsepriteLayer`]s defined in this Aseprite
     pub fn layers(&self) -> impl Iterator<Item = &AsepriteLayer> {
         self.layers.values()
+    }
+
+    /// Get each frame duration
+    pub fn frame_infos(&self) -> Vec<AsepriteFrameInfo> {
+        self.frame_infos.clone()
     }
 
     /// 获取特定帧的所有 layer 和对应的 z-index
