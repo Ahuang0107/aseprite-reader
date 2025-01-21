@@ -1,4 +1,5 @@
-use crate::raw::AsepriteBlendMode;
+use crate::raw::{AsepriteBlendMode, AsepriteColor};
+use crate::{AsepriteLayer, GroupLayer, LayerTreeNode, NormalLayer};
 
 use super::Aseprite;
 
@@ -113,6 +114,108 @@ fn check_aseprite_reader_result() {
                 assert_eq!(tag.user_data, "Frame2TagUserData");
             }
             _ => {}
+        }
+    }
+}
+
+impl AsepriteLayer {
+    ///
+    pub fn mock_group(index: usize, name: &str, child_level: u16) -> Self {
+        AsepriteLayer::Group(GroupLayer {
+            name: name.to_string(),
+            index,
+            visible: true,
+            child_level,
+            color: AsepriteColor::default(),
+            user_data: String::new(),
+        })
+    }
+    ///
+    pub fn mock_normal(index: usize, name: &str, child_level: u16) -> Self {
+        AsepriteLayer::Normal(NormalLayer {
+            name: name.to_string(),
+            index,
+            blend_mode: AsepriteBlendMode::Normal,
+            opacity: Some(255),
+            visible: true,
+            child_level,
+            color: AsepriteColor::default(),
+            user_data: String::new(),
+        })
+    }
+}
+
+#[test]
+fn check_build_layer_tree() {
+    let aseprite = Aseprite::from_path("./tests/test_cases/complex.aseprite").unwrap();
+    let layer_tree = aseprite.layer_tree();
+
+    // println!("{:#?}", layer_tree);
+
+    assert_eq!(layer_tree.len(), 6);
+
+    for (index, layer) in layer_tree.values().enumerate() {
+        match index {
+            0 => {
+                assert!(layer.is_normal());
+                assert_eq!(layer.name(), "BG1");
+            }
+            1 => {
+                assert!(layer.is_normal());
+                assert_eq!(layer.name(), "BG2");
+            }
+            2 => {
+                assert!(layer.is_normal());
+                assert_eq!(layer.name(), "BG3");
+            }
+            3 => {
+                assert!(layer.is_group());
+                assert_eq!(layer.name(), "Table");
+
+                match layer {
+                    LayerTreeNode::Group(_, tree) => {
+                        for (index, layer) in tree.values().enumerate() {
+                            match index {
+                                0 => {
+                                    assert!(layer.is_normal());
+                                    assert_eq!(layer.name(), "Col1BG");
+                                }
+                                1 => {
+                                    assert!(layer.is_group());
+                                    assert_eq!(layer.name(), "Col1");
+                                }
+                                2 => {
+                                    assert!(layer.is_normal());
+                                    assert_eq!(layer.name(), "Col2BG");
+                                }
+                                3 => {
+                                    assert!(layer.is_group());
+                                    assert_eq!(layer.name(), "Col2");
+                                }
+                                4 => {
+                                    assert!(layer.is_normal());
+                                    assert_eq!(layer.name(), "Col3BG");
+                                }
+                                5 => {
+                                    assert!(layer.is_group());
+                                    assert_eq!(layer.name(), "Col3");
+                                }
+                                _ => assert!(false),
+                            }
+                        }
+                    }
+                    _ => assert!(false),
+                }
+            }
+            4 => {
+                assert!(layer.is_group());
+                assert_eq!(layer.name(), "Filter");
+            }
+            5 => {
+                assert!(layer.is_normal());
+                assert_eq!(layer.name(), "Watermark");
+            }
+            _ => assert!(false),
         }
     }
 }

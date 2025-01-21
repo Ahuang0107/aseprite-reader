@@ -1,4 +1,101 @@
 use crate::raw::{AsepriteBlendMode, AsepriteColor, AsepriteLayerType, RawAsepriteUserData};
+use std::collections::BTreeMap;
+
+/// Represent a layer, either layer or group
+#[derive(Debug, Clone)]
+pub enum LayerTreeNode<'a> {
+    ///
+    Group(&'a GroupLayer, BTreeMap<usize, LayerTreeNode<'a>>),
+    ///
+    Normal(&'a NormalLayer),
+}
+
+impl<'a> LayerTreeNode<'a> {
+    ///
+    pub fn is_group(&self) -> bool {
+        match self {
+            LayerTreeNode::Group(..) => true,
+            LayerTreeNode::Normal(..) => false,
+        }
+    }
+    ///
+    pub fn is_normal(&self) -> bool {
+        match self {
+            LayerTreeNode::Group(..) => false,
+            LayerTreeNode::Normal(..) => true,
+        }
+    }
+    ///
+    pub fn name(&self) -> &'a str {
+        match self {
+            LayerTreeNode::Group(layer, _) => &layer.name,
+            LayerTreeNode::Normal(layer) => &layer.name,
+        }
+    }
+}
+
+///
+pub fn build_layer_tree<'a>(
+    layers: impl Iterator<Item = &'a AsepriteLayer>,
+) -> BTreeMap<usize, LayerTreeNode<'a>> {
+    let mut tree: BTreeMap<usize, LayerTreeNode<'a>> = BTreeMap::new();
+
+    for layer in layers {
+        match layer {
+            AsepriteLayer::Group(group_layer) => {
+                let tree = if group_layer.child_level == 0 {
+                    &mut tree
+                } else {
+                    let mut cur_child_level = group_layer.child_level;
+                    let mut cur_tree = &mut tree;
+                    while cur_child_level > 0 {
+                        let (&last_key, _) = cur_tree.last_key_value().unwrap();
+                        let tree = cur_tree.get_mut(&last_key).unwrap();
+                        match tree {
+                            LayerTreeNode::Group(_, inner_tree) => {
+                                cur_tree = inner_tree;
+                            }
+                            _ => {
+                                unreachable!()
+                            }
+                        }
+                        cur_child_level -= 1;
+                    }
+                    cur_tree
+                };
+                tree.insert(
+                    group_layer.index,
+                    LayerTreeNode::Group(group_layer, BTreeMap::new()),
+                );
+            }
+            AsepriteLayer::Normal(normal_layer) => {
+                let tree = if normal_layer.child_level == 0 {
+                    &mut tree
+                } else {
+                    let mut cur_child_level = normal_layer.child_level;
+                    let mut cur_tree = &mut tree;
+                    while cur_child_level > 0 {
+                        let (&last_key, _) = cur_tree.last_key_value().unwrap();
+                        let tree = cur_tree.get_mut(&last_key).unwrap();
+                        match tree {
+                            LayerTreeNode::Group(_, inner_tree) => {
+                                cur_tree = inner_tree;
+                            }
+                            _ => {
+                                unreachable!()
+                            }
+                        }
+                        cur_child_level -= 1;
+                    }
+                    cur_tree
+                };
+                tree.insert(normal_layer.index, LayerTreeNode::Normal(normal_layer));
+            }
+        }
+    }
+
+    tree
+}
 
 #[derive(Debug, Clone)]
 /// An aseprite layer
@@ -135,13 +232,13 @@ impl AsepriteLayer {
         match self {
             AsepriteLayer::Group(GroupLayer {
                 color, user_data, ..
-                                 }) => {
+            }) => {
                 *color = value.color;
                 *user_data = value.text;
             }
             AsepriteLayer::Normal(NormalLayer {
                 color, user_data, ..
-                                  }) => {
+            }) => {
                 *color = value.color;
                 *user_data = value.text;
             }

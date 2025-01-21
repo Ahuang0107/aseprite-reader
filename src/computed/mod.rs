@@ -9,7 +9,7 @@ pub use palette::*;
 pub use tag::*;
 
 use crate::{
-    error::{AsepriteError, AsepriteInvalidError, AseResult},
+    error::{AseResult, AsepriteError, AsepriteInvalidError},
     raw::{
         AsepriteColor, AsepriteColorDepth, AsepritePixel, RawAseprite, RawAsepriteCel,
         RawAsepriteChunk, RawAsepriteChunkType,
@@ -51,6 +51,11 @@ impl Aseprite {
     /// Get the associated [`AsepriteLayer`]s defined in this Aseprite
     pub fn layers(&self) -> impl Iterator<Item = &AsepriteLayer> {
         self.layers.values()
+    }
+
+    /// Get the associated [`AsepriteLayer`]s defined in this Aseprite, tree structure
+    pub fn layer_tree(&self) -> BTreeMap<usize, LayerTreeNode<'_>> {
+        build_layer_tree(self.layers())
     }
 
     /// Get each frame duration
@@ -148,7 +153,7 @@ impl Aseprite {
                     match layer {
                         AsepriteLayer::Group(GroupLayer {
                             index, child_level, ..
-                                             }) => {
+                        }) => {
                             if *child_level == cur_child_level {
                                 cur_index = *index;
                                 result.push(*index);
